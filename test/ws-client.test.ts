@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { appendParams } from '../src/eva/ws-client.js';
+import type { HttpClient } from '../src/eva/http-client.js';
+import { appendParams, WsClient } from '../src/eva/ws-client.js';
 
 describe('appendParams', () => {
   it('serializa arrays con índices', () => {
@@ -26,5 +27,21 @@ describe('appendParams', () => {
     expect(params.has('b')).toBe(false);
     expect(params.get('c')).toBe('0');
     expect(params.get('d')).toBe('false');
+  });
+
+  it('no envía wsformat, que Moodle 4.5 rechaza como parámetro inválido', async () => {
+    let body = '';
+    const http = {
+      baseUrl: 'https://eva.fing.edu.uy',
+      request: async (_url: string, options: { body?: URLSearchParams }) => {
+        body = options.body?.toString() ?? '';
+        return { status: 200, ok: true, url: '', headers: new Headers(), text: '{}' };
+      }
+    } as unknown as HttpClient;
+
+    await new WsClient(http, 'token').call('core_webservice_get_site_info');
+
+    expect(body).not.toContain('wsformat');
+    expect(body).toContain('moodlewsrestformat=json');
   });
 });

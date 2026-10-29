@@ -11,7 +11,6 @@ import type {
   EvaForum,
   EvaPost
 } from '../domain/types.js';
-import { cleanText } from '../domain/util.js';
 import {
   parseActivityPage,
   parseCategoryPage,
@@ -20,7 +19,8 @@ import {
   parseDiscussionPage,
   parseForumPage,
   parseLoginRequired,
-  parseSearchResults
+  parseSearchResults,
+  parseUserInfo
 } from './web-parsers.js';
 
 export interface WebPage {
@@ -90,11 +90,12 @@ export class WebClient {
   }
 
   async getMyCourses(): Promise<EvaCourse[]> {
+    const options = { includeNavigation: true };
     const page = await this.read(`${this.baseUrl}/my/courses.php`);
-    const courses = parseCourseList(page.html, this.baseUrl);
+    const courses = parseCourseList(page.html, this.baseUrl, undefined, options);
     if (courses.length) return courses;
     const dashboard = await this.read(`${this.baseUrl}/my/`);
-    return parseCourseList(dashboard.html, this.baseUrl);
+    return parseCourseList(dashboard.html, this.baseUrl, undefined, options);
   }
 
   async getCourse(courseId: number): Promise<EvaCourse> {
@@ -219,14 +220,6 @@ export class WebClient {
 
   async getUserInfo(): Promise<{ id?: number; fullname?: string; username?: string }> {
     const page = await this.read(`${this.baseUrl}/my/`);
-    const bodyClass = /user-(\d+)/.exec(page.html);
-    const fullname =
-      cleanText(/<span class="usertext[^"]*">([^<]+)<\/span>/.exec(page.html)?.[1] ?? '') ||
-      cleanText(/class="usertext[^"]*"[^>]*>([^<]+)</.exec(page.html)?.[1] ?? '') ||
-      undefined;
-    return {
-      id: bodyClass ? Number(bodyClass[1]) : undefined,
-      ...(fullname ? { fullname } : {})
-    };
+    return parseUserInfo(page.html);
   }
 }

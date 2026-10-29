@@ -7,7 +7,8 @@ import {
   parseCoursePage,
   parseForumPage,
   parseLoginRequired,
-  parseSearchResults
+  parseSearchResults,
+  parseUserInfo
 } from '../src/eva/web-parsers.js';
 
 const baseUrl = 'https://eva.fing.edu.uy';
@@ -99,6 +100,31 @@ describe('parseCourseList', () => {
 
   it('usa la cantidad de cursos como total si no hay texto de resultados', () => {
     expect(parseSearchResults(fixture('course-list.html'), baseUrl).total).toBe(2);
+  });
+
+  it('lee los cursos del menú de navegación de Moodle 4.5 solo cuando se habilita', () => {
+    const html = fixture('my-courses-moodle45.html');
+    expect(parseCourseList(html, baseUrl)).toHaveLength(0);
+
+    const courses = parseCourseList(html, baseUrl, undefined, { includeNavigation: true });
+    expect(courses.map((course) => course.id)).toEqual([2079, 1985, 1504, 1442]);
+    expect(courses[0]).toMatchObject({
+      fullname: 'PIm',
+      url: `${baseUrl}/course/view.php?id=2079`
+    });
+  });
+});
+
+describe('parseUserInfo', () => {
+  it('lee el usuario del menú de Moodle 4.5', () => {
+    expect(parseUserInfo(fixture('user-menu-moodle45.html'))).toEqual({
+      id: 9515,
+      fullname: 'SANTIAGO TOMAS NOLLA BONILLA'
+    });
+  });
+
+  it('devuelve un objeto vacío si no encuentra datos', () => {
+    expect(parseUserInfo('<body class="notloggedin"></body>')).toEqual({});
   });
 });
 

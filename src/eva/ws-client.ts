@@ -50,11 +50,12 @@ export class WsClient {
   }
 
   async call<T = unknown>(functionName: string, params: Record<string, unknown> = {}): Promise<T> {
+    // "wsformat" no es un parámetro válido de Moodle 4.5 y hace que el
+    // webservice responda invalid_parameter_exception.
     const body = new URLSearchParams({
       wstoken: this.token,
       wsfunction: functionName,
-      moodlewsrestformat: 'json',
-      wsformat: 'json'
+      moodlewsrestformat: 'json'
     });
     for (const [key, value] of Object.entries(params)) appendParams(body, key, value);
 

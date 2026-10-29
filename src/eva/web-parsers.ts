@@ -218,7 +218,21 @@ export function parseCoursePage(html: string, baseUrl: string, courseIdHint?: nu
   return { course, sections, tabs };
 }
 
-export function parseCourseList(html: string, baseUrl: string, categoryName?: string): EvaCourse[] {
+export interface ParseCourseListOptions {
+  /**
+   * Moodle 4.5 muestra "Mis cursos" en el desplegable de navegación
+   * (#drop-down-menu / .moremenu), fuera de #region-main. Solo debe activarse
+   * para la lista de cursos del usuario, no para categorías o búsquedas.
+   */
+  includeNavigation?: boolean;
+}
+
+export function parseCourseList(
+  html: string,
+  baseUrl: string,
+  categoryName?: string,
+  options: ParseCourseListOptions = {}
+): EvaCourse[] {
   const doc = cheerio.load(html);
   const courses: EvaCourse[] = [];
 
@@ -244,27 +258,77 @@ export function parseCourseList(html: string, baseUrl: string, categoryName?: st
   });
 
   if (!courses.length) {
+    const scopes: Node[] = [];
     const main = doc('main, #region-main, .course-content').first();
-    const links = (main.length ? main : doc('body')).find('a[href*="/course/view.php?id="]').toArray();
-    for (const element of links) {
-      const node = doc(element);
-      const href = node.attr('href') ?? '';
-      const id = courseIdFromUrl(href);
-      if (!id) continue;
-      const name = titleFromLink(node);
-      if (!name || name.toLowerCase() === 'acceder') continue;
-      courses.push({
-        id,
-        shortname: '',
-        fullname: name,
-        displayName: name,
-        ...(categoryName ? { categoryName } : {}),
-        url: `${baseUrl}/course/view.php?id=${id}`
+    if (main.length) scopes.push(main);
+
+    if (options.includeNavigation) {
+      // En Moodle 4.5 el menú "Mis cursos" vive en la barra de navegación.
+      doc('#drop-down-menu, .moremenu').each((_index, element) => {
+        scopes.push(doc(element));
       });
+    }
+
+    if (!scopes.length) scopes.push(doc('body'));
+
+    for (const scope of scopes) {
+      const links = scope.find('a[href*="/course/view.php?id="]').toArray();
+      for (const element of links) {
+        const node = doc(element);
+        const href = node.attr('href') ?? '';
+        const id = courseIdFromUrl(href);
+        if (!id) continue;
+        const name = titleFromLink(node);
+        if (!name || name.toLowerCase() === 'acceder') continue;
+        courses.push({
+          id,
+          shortname: '',
+          fullname: name,
+          displayName: name,
+          ...(categoryName ? { categoryName } : {}),
+          url: `${baseUrl}/course/view.php?id=${id}`
+        });
+      }
     }
   }
 
   return uniqueBy(courses, (course) => course.id);
+}
+
+export interface ParsedUserInfo {
+  id?: number;
+  fullname?: string;
+  username?: string;
+}
+
+export function parseUserInfo(html: string): ParsedUserInfo {
+  const doc = cheerio.load(html);
+  const profileLink = doc('a[href*="/user/profile.php?id="]').first();
+  const profileId = courseIdFromUrl(profileLink.attr('href'));
+  const dataUserId = doc('[data-userid]').first().attr('data-userid');
+  const id = profileId ?? (Number(dataUserId) || undefined);
+
+  const initials = doc('.userinitials').first();
+  let fullname =
+    cleanText(initials.attr('title')) ||
+    cleanText(initials.attr('aria-label')) ||
+    '';
+
+  if (!fullname) {
+    doc('a[href*="/user/profile.php"]').each((_index, element) => {
+      const label = titleFromLink(doc(element));
+      if (!label || /^perfil$/i.test(label)) return;
+      if (label.length > fullname.length) fullname = label;
+    });
+  }
+
+  const username = cleanText(doc('[data-username]').first().attr('data-username')) || undefined;
+
+  return {
+    ...(id ? { id } : {}),
+    ...(fullname ? { fullname } : {}),
+    ...(username ? { username } : {})
+  };
 }
 
 export function parseCategoryPage(html: string, baseUrl: string, parentId?: number): { categories: EvaCategory[]; courses: EvaCourse[] } {

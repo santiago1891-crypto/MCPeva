@@ -41,9 +41,15 @@ export function extractMobileToken(locationOrBody: string, passport: string): st
   try {
     const normalized = decoded.replace(/-/g, '+').replace(/_/g, '/');
     const binary = Buffer.from(normalized, 'base64').toString('utf8');
+    // Moodle 4.5 usa base64(<hash>:::<token>) en el redirect de la app móvil.
+    // El hash no es el passport enviado, así que solo validamos el token.
+    if (binary.includes(':::')) {
+      const token = binary.split(':::')[1]?.trim();
+      if (token) return token;
+    }
     const [requestPassport, token] = binary.split(':');
     if (requestPassport && token) {
-      // Es el payload estructurado de la app móvil: si el passport no coincide,
+      // Formato legado: passport:token[:firma]. Si el passport no coincide,
       // el token no corresponde a esta solicitud y no debe usarse.
       return requestPassport === passport ? token : undefined;
     }

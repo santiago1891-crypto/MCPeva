@@ -25,6 +25,13 @@ describe('extractMobileToken', () => {
     expect(extractMobileToken(`moodlemobile://token=${encoded}`, passport)).toBeUndefined();
   });
 
+  it('extrae el token del payload de Moodle 4.5 con separador :::', () => {
+    const encoded = mobileToken('06237ad1da0a02a434f18d3203fce164:::6b0b8989c6863924ef80c2b8c658a679');
+    expect(extractMobileToken(`moodlemobile://token=${encoded}`, passport)).toBe(
+      '6b0b8989c6863924ef80c2b8c658a679'
+    );
+  });
+
   it('acepta un token plano como respaldo', () => {
     const plain = '0123456789abcdef0123456789abcdef';
     expect(extractMobileToken(`moodlemobile://token=${plain}`, passport)).toBe(plain);

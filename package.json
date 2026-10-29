@@ -27,6 +27,7 @@
     "content": "tsx src/cli/index.ts content",
     "files": "tsx src/cli/index.ts files",
     "download": "tsx src/cli/index.ts download",
+    "tui": "tsx src/cli/index.ts tui",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -38,12 +39,16 @@
     "cheerio": "^1.2.0",
     "dotenv": "^17.2.3",
     "fastify": "^5.12.7",
+    "ink": "^6.8.0",
     "playwright-core": "^1.64.1",
+    "react": "^19.3.1",
     "tough-cookie": "^5.1.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
+    "@types/react": "^19.3.0",
+    "ink-testing-library": "^4.0.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitest": "^4.0.8"

@@ -9,6 +9,7 @@ import { SessionStore } from '../auth/session-store.js';
 import { EvaService } from '../services/eva-service.js';
 import { startApi } from '../api/server.js';
 import { startMcpHttp, startMcpStdio } from '../mcp/transport.js';
+import { runTui } from '../tui/index.js';
 import type { EvaCourse, EvaCourseContents, EvaSection } from '../domain/types.js';
 
 interface ParsedArgs {
@@ -35,6 +36,7 @@ Comandos:
   content <texto>       Busca dentro de tus cursos (secciones, actividades, archivos).
   files <texto>         Busca archivos por nombre y/o extensión en tus cursos.
   download <url>        Descarga un archivo de EVA al directorio local.
+  tui                   Interfaz interactiva para navegar cursos, actividades y archivos.
   api                   Inicia la API REST.
   mcp                   Inicia el servidor MCP por stdio.
   help                  Muestra esta ayuda.
@@ -59,6 +61,7 @@ Ejemplos:
   npx tsx src/cli/index.ts courses --json
   npx tsx src/cli/index.ts contents 1234
   npx tsx src/cli/index.ts files parcial --ext pdf
+  npm run tui
   npx tsx src/cli/index.ts mcp
 `;
 
@@ -430,6 +433,9 @@ async function main(): Promise<void> {
       return;
     case 'download':
       await commandDownload(args);
+      return;
+    case 'tui':
+      await runTui();
       return;
     case 'api':
       await commandApi(args);

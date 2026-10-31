@@ -517,15 +517,4 @@ Los fixtures HTML de ejemplo están en `test/fixtures/`.
 - No hay operaciones de escritura (renombrar secciones, crear recursos, entregar tareas) en esta versión.
 
 ---
-
-## 📄 Licencia
-
-Este proyecto se distribuye bajo la licencia **MIT**. Es un proyecto independiente, sin relación oficial con la UdelaR ni la FING.
-
-<div align="center">
-
-[![Node](https://img.shields.io/badge/Node.js-20.18.1+-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/docs/latest-v20.x/api/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/docs/)
-[![MCP](https://img.shields.io/badge/MCP-1.32-DA5A2A?style=for-the-badge&logo=modelcontextprotocol&logoColor=white)](https://modelcontextprotocol.io/)
-
 </div>

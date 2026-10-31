@@ -246,16 +246,23 @@ La **barra inferior** (estilo status bar, a todo el ancho y en la última línea
 | `↑` `↓` o `j` `k` | todas | Moverse por la lista |
 | `Enter` | cursos | Abrir el curso seleccionado |
 | `Enter` | curso | Abrir la actividad seleccionada |
+| `Enter` | actividad | Si es un foro, abrir sus discusiones |
+| `Enter` | foro | Abrir la discusión seleccionada y leer sus mensajes |
 | `Enter` | buscar | Buscar si escribiste texto; si hay resultado seleccionado, abre la actividad o descarga el archivo |
 | `d` | actividad | Descargar el archivo seleccionado |
 | `o` | actividad | Descargar y abrir el archivo con la app del sistema |
+| `d` | discusión | Descargar el adjunto del mensaje seleccionado |
+| `o` | discusión | Descargar y abrir el adjunto (o el último descargado) |
+| `Espacio` o `l` | discusión | Expandir el mensaje seleccionado: cuerpo completo y sus adjuntos |
 | `Escribir` | buscar | Carga el texto de la búsqueda |
 | `Backspace` | buscar | Borra el último carácter |
-| `/` o `f` | cursos, curso, actividad | Ir a la búsqueda global |
-| `Esc` o `h` | curso, actividad, buscar | Volver a la pantalla anterior |
-| `q` | cursos, curso, actividad | Salir (en buscar, `Esc` y después `q`; `Ctrl+C` sale siempre) |
+| `/` o `f` | cursos, curso, actividad, foro | Ir a la búsqueda global |
+| `Esc` o `h` | curso, actividad, foro, discusión, buscar | Volver a la pantalla anterior |
+| `q` | cursos, curso, actividad, foro, discusión | Salir (en buscar, `Esc` y después `q`; `Ctrl+C` sale siempre) |
 
 **Flujo típico:** `Mis cursos → curso → sección → actividad → archivo (d / o)`.
+
+**Navegación de foros:** `actividad de foro (Enter) → discusiones del foro (Enter) → mensajes de la discusión`. En la pantalla del foro se ven la introducción y cada discusión con su autor, fecha, respuestas y no leídas; en la de mensajes, el hilo ordenado jerárquicamente (las respuestas van sangradas), con el cuerpo del mensaje seleccionado previsualizado arriba. `Espacio` lo expande y ahí aparecen sus adjuntos, que se descargan con `d` y se abren con `o`.
 
 - Los cursos, secciones y actividades salen de la misma capa de servicios que el CLI, la API y el MCP (con Web Services primero y sesión web como respaldo).
 - La búsqueda global busca a la vez en nombres de actividades/secciones (`searchContent`) y en nombres de archivo (`searchFiles`).
@@ -378,6 +385,7 @@ MCPeva/
 │   │   ├── App.tsx          Componente raíz: pantallas, footer de ayuda y toast
 │   │   ├── index.ts         Arranque de la TUI (valida TTY y sesión, silencia logs)
 │   │   ├── list.ts          Helpers de listas (ventana, truncado, formato)
+│   │   ├── foros.ts         Helpers de foros (HTML a texto, orden de mensajes)
 │   │   ├── outline.ts       Aplanado de secciones/actividades y etiquetas
 │   │   ├── open-file.ts     Apertura de archivos con la app del sistema
 │   │   └── hooks.ts         Hook de tamaño de terminal
@@ -413,6 +421,8 @@ MCPeva/
 │   ├── mappers.test.ts
 │   ├── parsers.test.ts
 │   ├── tui-app.test.tsx     Smoke test de la TUI con ink-testing-library
+│   ├── tui-foros.test.ts    Helpers puros de foros (HTML, fechas, orden de mensajes)
+│   ├── tui-forums.test.tsx  Navegación de foros: actividad → discusiones → mensajes
 │   ├── tui-list.test.ts     Helpers puros de la TUI
 │   ├── util.test.ts
 │   └── ws-client.test.ts
@@ -474,7 +484,7 @@ npm run test:watch  # modo watch
 
 | Suite | Qué cubre |
 | --- | --- |
-| `parsers.test.ts` | Parseo del HTML de Moodle (curso, actividades, foros, categorías) con fixtures. |
+| `parsers.test.ts` | Parseo del HTML de Moodle (curso, actividades, foros, discusiones, categorías) con fixtures. |
 | `mappers.test.ts` | Mapeo de respuestas de Web Services a tipos de dominio. |
 | `auth.test.ts` | Extracción del token móvil, cookies y serialización de sesión. |
 | `file-search.test.ts` | Búsqueda de archivos por nombre y extensión. |
@@ -482,6 +492,8 @@ npm run test:watch  # modo watch
 | `util.test.ts` | Utilidades de URLs, texto y saneamiento. |
 | `tui-list.test.ts` | Helpers puros de la TUI (ventana de lista, truncado, outline). |
 | `tui-app.test.tsx` | Smoke test de la TUI con `ink-testing-library` (navegación, descarga, volver). |
+| `tui-foros.test.ts` | Helpers de foros: HTML a texto, fechas, formato de discusiones y orden jerárquico de mensajes. |
+| `tui-forums.test.tsx` | Navegación de foros en la TUI: actividad → discusiones → mensajes, expandir y descargar adjuntos. |
 
 Los fixtures HTML de ejemplo están en `test/fixtures/`.
 

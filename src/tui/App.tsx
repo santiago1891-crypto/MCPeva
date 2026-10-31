@@ -5,20 +5,26 @@ import type {
   EvaActivityDetail,
   EvaCourse,
   EvaCourseContents,
+  EvaDiscussionSummary,
   EvaFile,
   EvaFileSearchHit,
-  EvaModule
+  EvaForum,
+  EvaModule,
+  EvaPost
 } from '../domain/types.js';
 import type { EvaService } from '../services/eva-service.js';
 import { useTerminalSize } from './hooks.js';
 import { clamp, fitText, formatBytes, listWindow, wrapText } from './list.js';
 import { flattenOutline, moduleTag } from './outline.js';
+import { formatDiscussion, formatPostHeader, htmlToText, orderPosts, postDepth } from './foros.js';
 import { openFile } from './open-file.js';
 
 type View =
   | { kind: 'courses' }
   | { kind: 'outline'; courseId: number; courseName: string }
   | { kind: 'activity'; cmid: number; courseId?: number; modname?: string; name?: string }
+  | { kind: 'forum'; forumId: number; cmid: number; courseId: number; name: string }
+  | { kind: 'discussion'; discussionId: number; name: string }
   | { kind: 'search' };
 
 interface ScreenProps {
@@ -37,6 +43,8 @@ function messageOf(error: unknown): string {
 function breadcrumb(view: View): string {
   if (view.kind === 'outline') return view.courseName;
   if (view.kind === 'activity') return view.name ?? 'Actividad';
+  if (view.kind === 'forum') return view.name;
+  if (view.kind === 'discussion') return view.name;
   if (view.kind === 'search') return 'Buscar';
   return 'Mis cursos';
 }
@@ -68,6 +76,20 @@ function helpKeys(view: View): HelpKey[] {
         { keys: 'd', usage: 'descargar' },
         { keys: 'o', usage: 'abrir archivo' },
         { keys: '/', usage: 'buscar' },
+        { keys: 'Esc h', usage: 'volver' }
+      ];
+    case 'forum':
+      return [
+        { keys: '↑↓ jk', usage: 'moverse' },
+        { keys: 'Enter', usage: 'abrir discusión' },
+        { keys: '/', usage: 'buscar' },
+        { keys: 'Esc h', usage: 'volver' }
+      ];
+    case 'discussion':
+      return [
+        { keys: '↑↓ jk', usage: 'moverse entre mensajes' },
+        { keys: 'd', usage: 'descargar adjunto' },
+        { keys: 'o', usage: 'abrir adjunto' },
         { keys: 'Esc h', usage: 'volver' }
       ];
     case 'search':
@@ -182,7 +204,34 @@ export function App({ service, userLabel }: AppProps) {
           />
         )}
         {view.kind === 'activity' && (
-          <ActivityScreen {...screen} key={`activity-${view.cmid}`} service={service} target={view} />
+          <ActivityScreen
+            {...screen}
+            key={`activity-${view.cmid}`}
+            service={service}
+            target={view}
+            onOpenForum={(forum, name) =>
+              go({ kind: 'forum', forumId: forum.id, cmid: forum.cmid, courseId: forum.courseId, name })
+            }
+          />
+        )}
+        {view.kind === 'forum' && (
+          <ForumScreen
+            {...screen}
+            key={`forum-${view.forumId}`}
+            service={service}
+            forum={view}
+            onOpenDiscussion={(discussion) =>
+              go({ kind: 'discussion', discussionId: discussion.id, name: discussion.name })
+            }
+          />
+        )}
+        {view.kind === 'discussion' && (
+          <DiscussionScreen
+            {...screen}
+            key={`discussion-${view.discussionId}`}
+            service={service}
+            discussion={view}
+          />
         )}
         {view.kind === 'search' && (
           <SearchScreen
@@ -390,9 +439,20 @@ interface ActivityTarget {
 interface ActivityScreenProps extends ScreenProps {
   service: EvaService;
   target: ActivityTarget;
+  onOpenForum: (forum: EvaForum, name: string) => void;
 }
 
-function ActivityScreen({ service, target, listSize, width, setToast, onBack, onQuit, onSearch }: ActivityScreenProps) {
+function ActivityScreen({
+  service,
+  target,
+  listSize,
+  width,
+  setToast,
+  onBack,
+  onQuit,
+  onSearch,
+  onOpenForum
+}: ActivityScreenProps) {
   const [detail, setDetail] = useState<EvaActivityDetail>();
   const [error, setError] = useState<string | undefined>(undefined);
   const [cursor, setCursor] = useState(0);
@@ -446,8 +506,13 @@ function ActivityScreen({ service, target, listSize, width, setToast, onBack, on
       return;
     }
     const file = files[index];
+    const forum = detail.forum;
     if (input === 'd' && file) {
       void download(file, false);
+      return;
+    }
+    if (key.return && forum && !file) {
+      onOpenForum(forum, detail.title);
       return;
     }
     if (input === 'o') {
@@ -493,6 +558,14 @@ function ActivityScreen({ service, target, listSize, width, setToast, onBack, on
       {detail.module.dates?.due && <Text color="yellow">{fitText(`Entrega: ${detail.module.dates.due}`, width - 4)}</Text>}
       {detail.assignment?.dueDate && (
         <Text color="yellow">{fitText(`Entrega: ${detail.assignment.dueDate}`, width - 4)}</Text>
+      )}
+      {detail.forum && (
+        <Text color="magenta">
+          {fitText(
+            `Foro · ${detail.forum.discussionCount ?? detail.discussions?.length ?? 0} discusión(es) · Enter para abrir`,
+            width - 4
+          )}
+        </Text>
       )}
       {metadata.map(([key, value]) => (
         <Text key={key} color="gray">
@@ -654,4 +727,257 @@ function SearchScreen({
       })}
     </Box>
   );
+}
+interface ForumTarget {
+  forumId: number;
+  cmid: number;
+  courseId: number;
+  name: string;
+}
+
+interface ForumScreenProps extends ScreenProps {
+  service: EvaService;
+  forum: ForumTarget;
+  onOpenDiscussion: (discussion: EvaDiscussionSummary) => void;
+}
+
+function ForumScreen({ service, forum, listSize, width, onOpenDiscussion, onBack, onQuit, onSearch }: ForumScreenProps) {
+  const [discussions, setDiscussions] = useState<EvaDiscussionSummary[]>();
+  const [intro, setIntro] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [cursor, setCursor] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    service
+      .getForumDiscussions(forum.forumId, forum.cmid, forum.courseId)
+      .then((value) => {
+        if (active) setDiscussions(value);
+      })
+      .catch((err) => {
+        if (active) setError(messageOf(err));
+      });
+    service
+      .getActivity(forum.cmid, forum.courseId, 'forum', forum.name)
+      .then((value) => {
+        if (active) setIntro(value.description);
+      })
+      .catch(() => {
+        // La introducción es opcional: si no se puede leer, seguimos sin ella.
+      });
+    return () => {
+      active = false;
+    };
+  }, [service, forum.forumId, forum.cmid, forum.courseId, forum.name]);
+
+  const index = clamp(cursor, discussions?.length ?? 0);
+
+  useInput((input, key) => {
+    if (key.escape || input === 'h') {
+      onBack();
+      return;
+    }
+    const items = discussions ?? [];
+    if (!discussions) {
+      if (input === 'q') onQuit();
+      return;
+    }
+    if (key.upArrow || input === 'k') {
+      setCursor(Math.max(0, index - 1));
+      return;
+    }
+    if (key.downArrow || input === 'j') {
+      setCursor(Math.min(items.length - 1, index + 1));
+      return;
+    }
+    if (key.return) {
+      const discussion = items[index];
+      if (discussion) onOpenDiscussion(discussion);
+      return;
+    }
+    if (input === '/' || input === 'f') {
+      onSearch();
+      return;
+    }
+    if (input === 'q') {
+      onQuit();
+    }
+  });
+
+  if (error) return <Text color="red">{fitText(error, width)}</Text>;
+  if (!discussions) return <Text color="yellow">Cargando discusiones…</Text>;
+
+  const introLines = intro ? wrapText(htmlToText(intro), width - 4, 2) : [];
+  const window = listWindow(discussions.length, index, listSize);
+
+  return (
+    <Box flexDirection="column">
+      <Text color="cyan" bold>
+        {fitText(forum.name, width - 4)}
+      </Text>
+      {introLines.map((line, lineIndex) => (
+        <Text key={`intro-${lineIndex}`} color="gray">
+          {fitText(line, width - 4)}
+        </Text>
+      ))}
+      <Text color="gray" dimColor>
+        {`${discussions.length} discusión(es) · Enter para leer los mensajes`}
+      </Text>
+      {discussions.length === 0 && <Text color="gray">Este foro todavía no tiene discusiones.</Text>}
+      {discussions.slice(window.start, window.end).map((discussion, offset) => {
+        const itemIndex = window.start + offset;
+        const selected = itemIndex === index;
+        return (
+          <Text key={discussion.id} color={selected ? 'cyan' : undefined} bold={selected}>
+            {fitText(`${selected ? '> ' : '  '}${formatDiscussion(discussion)}`, width - 4)}
+          </Text>
+        );
+      })}
+    </Box>
+  );
+}
+
+interface DiscussionTarget {
+  discussionId: number;
+  name: string;
+}
+
+interface DiscussionScreenProps extends ScreenProps {
+  service: EvaService;
+  discussion: DiscussionTarget;
+}
+
+function DiscussionScreen({ service, discussion, listSize, width, setToast, onBack, onQuit }: DiscussionScreenProps) {
+  const [posts, setPosts] = useState<EvaPost[]>();
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [cursor, setCursor] = useState(0);
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [lastDownload, setLastDownload] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    service
+      .getDiscussionPosts(discussion.discussionId)
+      .then((value) => {
+        if (active) setPosts(orderPosts(value));
+      })
+      .catch((err) => {
+        if (active) setError(messageOf(err));
+      });
+    return () => {
+      active = false;
+    };
+  }, [service, discussion.discussionId]);
+
+  const items = posts ?? [];
+  const index = clamp(cursor, items.length);
+  const current = items[index];
+  const currentAttachments = current?.attachments ?? [];
+  const attachmentIndex = clamp(cursor, currentAttachments.length);
+
+  const download = async (file: EvaFile, open: boolean): Promise<void> => {
+    setToast(`Descargando ${file.filename}…`);
+    try {
+      const result = await service.downloadFile(file.url, file.filename);
+      setLastDownload(result.path);
+      setToast(open ? `Abriendo ${result.filename} (${result.path})` : `Descargado: ${result.path}`);
+      if (open) openFile(result.path);
+    } catch (err) {
+      setToast(`Error: ${messageOf(err)}`);
+    }
+  };
+
+  useInput((input, key) => {
+    if (key.escape || input === 'h') {
+      onBack();
+      return;
+    }
+    if (!posts) {
+      if (input === 'q') onQuit();
+      return;
+    }
+    if (key.upArrow || input === 'k') {
+      setCursor(Math.max(0, index - 1));
+      return;
+    }
+    if (key.downArrow || input === 'j') {
+      setCursor(Math.min(items.length - 1, index + 1));
+      return;
+    }
+    const attachment = currentAttachments[attachmentIndex];
+    if (input === 'd' && attachment) {
+      void download(attachment, false);
+      return;
+    }
+    if (input === 'o') {
+      if (attachment) {
+        void download(attachment, true);
+      } else if (lastDownload) {
+        setToast(`Abriendo ${lastDownload}`);
+        openFile(lastDownload);
+      }
+      return;
+    }
+    if (input === ' ' || input === 'l') {
+      if (current) setExpanded((value) => ({ ...value, [current.id]: !value[current.id] }));
+      return;
+    }
+    if (input === 'q') {
+      onQuit();
+    }
+  });
+
+  if (error) return <Text color="red">{fitText(error, width)}</Text>;
+  if (!posts) return <Text color="yellow">Cargando mensajes…</Text>;
+  if (!items.length) return <Text color="gray">Esta discusión no tiene mensajes.</Text>;
+
+  const window = listWindow(items.length, index, listSize);
+  const previewLines = current ? buildPreview(current, items, expanded[current.id], width - 4) : [];
+
+  return (
+    <Box flexDirection="column">
+      <Text color="cyan" bold>
+        {fitText(discussion.name, width - 4)}
+      </Text>
+      <Text color="gray" dimColor>
+        {`${items.length} mensaje(s) · ↑↓ para navegar · espacio para expandir`}
+      </Text>
+      {previewLines.map((line, lineIndex) => (
+        <Text key={`preview-${lineIndex}`} color={lineIndex === 0 ? undefined : 'gray'}>
+          {fitText(line, width - 4)}
+        </Text>
+      ))}
+      {currentAttachments.length > 0 && (
+        <Text color="yellow">
+          {fitText(`${currentAttachments.length} adjunto(s) · d descargar · o abrir`, width - 4)}
+        </Text>
+      )}
+      {items.slice(window.start, window.end).map((post, offset) => {
+        const postIndex = window.start + offset;
+        const selected = postIndex === index;
+        const depth = postDepth(post, items);
+        return (
+          <Text key={post.id} color={selected ? 'cyan' : undefined} bold={selected}>
+            {fitText(`${selected ? '> ' : '  '}${formatPostHeader(post, depth)}`, width - 4)}
+          </Text>
+        );
+      })}
+    </Box>
+  );
+}
+
+/** Arma el previsualizado del mensaje seleccionado: cuerpo y, si está expandido, sus adjuntos. */
+function buildPreview(post: EvaPost, all: EvaPost[], isExpanded: boolean, width: number): string[] {
+  const body = htmlToText(post.message ?? post.messageHtml);
+  const depth = postDepth(post, all);
+  const indent = '  '.repeat(depth + 1);
+  const lines = wrapText(body, width - indent.length, isExpanded ? Number.POSITIVE_INFINITY : 6).map(
+    (line) => `${indent}${line}`
+  );
+  if (!isExpanded || !post.attachments.length) return lines;
+  for (const file of post.attachments) {
+    const size = formatBytes(file.size);
+    lines.push(`${indent}📎 ${file.filename}${size ? ` (${size})` : ''}`);
+  }
+  return lines;
 }

@@ -467,19 +467,40 @@ export function parseDiscussionPage(html: string, baseUrl: string, discussionId:
   const posts: EvaPost[] = [];
   doc('article.forumpost, .forumpost').each((_index, element) => {
     const node = doc(element);
-    const id = Number(/(?:post-|p)(\d+)/.exec(node.attr('id') ?? '')?.[1] ?? node.attr('data-post-id') ?? 0);
-    const subject = text(node.find('.subject, .post-subject, h3').first());
-    const author = text(node.find('.author a, .author, .user a, .user').first());
-    const dateText = cleanText(node.find('.postdate, time').first().text());
-    const parsedDate = dateText ? new Date(dateText) : undefined;
-    const messageNode = node.find('.post-content, .posting, .content').first();
+    const dataPostId = node.attr('data-post-id');
+    const id = Number(dataPostId ?? /(?:post-|p)(\d+)/.exec(node.attr('id') ?? '')?.[1] ?? 0);
+    const subject = text(
+      node.find('[data-region-content="forum-post-core-subject"], .subject, .post-subject, h3').first()
+    );
+    // Moodle 4.5 encabeza el mensaje con "de <a href="…/user/view.php…">Autor</a> - <time datetime=…>".
+    const author =
+      text(node.find('header a[href*="user/view.php"], .author a, .author, .user a, .user').first()) || undefined;
+    // La fecha real va en el atributo datetime (ISO); el texto visible está en español local.
+    const datetime = node.find('time[datetime]').first().attr('datetime');
+    const parsedDate = datetime ? new Date(datetime) : undefined;
+    const dateText = datetime ? '' : cleanText(node.find('.postdate, time').first().text());
+    const fallbackDate = dateText ? new Date(dateText) : undefined;
+    const createdAt = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : fallbackDate;
+    // Moodle 4.5 envuelve el cuerpo en .post-content-container; se conservan los selectores anteriores.
+    const messageNode = node.find('.post-content-container, .post-content, .posting, .content').first();
     const messageHtml = messageNode.length ? messageNode.html() ?? undefined : undefined;
+    // Las respuestas están en <article data-post-id> anidadas dentro del article del padre
+    // (data-region="replies-container"): buscamos el article ancestro más cercano con otro id.
+    let parentId: number | undefined;
+    for (const ancestor of node.parents('article[data-post-id]').toArray()) {
+      const parentIdValue = Number(doc(ancestor).attr('data-post-id'));
+      if (parentIdValue && parentIdValue !== id) {
+        parentId = parentIdValue;
+        break;
+      }
+    }
     posts.push({
       id,
       discussionId,
+      ...(parentId ? { parentId } : {}),
       subject: subject || `Publicación ${id}`,
-      author: author || undefined,
-      createdAt: parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : undefined,
+      author,
+      createdAt: createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt.toISOString() : undefined,
       ...(messageHtml ? { messageHtml, message: cleanText(htmlToText(messageHtml)) } : {}),
       attachments: extractFiles(doc, node, baseUrl)
     });

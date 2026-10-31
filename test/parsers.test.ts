@@ -5,6 +5,7 @@ import {
   parseCategoryPage,
   parseCourseList,
   parseCoursePage,
+  parseDiscussionPage,
   parseForumPage,
   parseLoginRequired,
   parseSearchResults,
@@ -187,5 +188,38 @@ describe('parseLoginRequired', () => {
   it('detecta una página de login', () => {
     expect(parseLoginRequired('<body class="notloggedin"><form id="login"></form></body>')).toBe(true);
     expect(parseLoginRequired('<body class="loggedin"><main>Hola</main></body>')).toBe(false);
+  });
+});
+
+describe('parseDiscussionPage (Moodle 4.5 de EVA)', () => {
+  const posts = parseDiscussionPage(fixture('discussion-page.html'), baseUrl, 17560);
+
+  it('lee los tres mensajes de la discusión', () => {
+    expect(posts.map((post) => post.id)).toEqual([30296, 30691, 30738]);
+    expect(posts.every((post) => post.discussionId === 17560)).toBe(true);
+  });
+
+  it('extrae el cuerpo del mensaje desde .post-content-container', () => {
+    expect(posts[0]!.message).toContain('Habilitamos la sección de la Semana 11');
+    expect(posts[0]!.messageHtml).toContain('<p>Habilitamos la sección de la Semana 11');
+    for (const post of posts) {
+      expect((post.message ?? '').length).toBeGreaterThan(20);
+    }
+  });
+
+  it('lee asunto, autor y fecha ISO del encabezado', () => {
+    expect(posts[0]).toMatchObject({
+      subject: 'Semana 11',
+      author: 'Marcos Viera',
+      createdAt: '2026-10-26T12:08:05.000Z'
+    });
+    expect(posts[1]).toMatchObject({ subject: 'Re: Semana 11', author: 'Marcos Viera' });
+    expect(posts[2]).toMatchObject({ subject: 'Re: Semana 11', author: 'Gaston Notte' });
+  });
+
+  it('reconstruye la jerarquía padre/hijo con los articles anidadas', () => {
+    expect(posts[0]!.parentId).toBeUndefined();
+    expect(posts[1]!.parentId).toBe(30296);
+    expect(posts[2]!.parentId).toBe(30691);
   });
 });
